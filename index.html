@@ -151,6 +151,12 @@
       <input id="chk-mirror" type="checkbox" checked>
       <span>Miroir</span>
     </label>
+    <label><span>Son</span>
+      <select id="sel-son">
+        <option value="theremin">Thérémine</option>
+        <option value="martenot">Onde Martenot</option>
+      </select>
+    </label>
     <div id="note-big">—</div>
     <button id="btn-edit" style="margin-left:auto">NOTES ▾</button>
     <button id="btn-fs" title="Plein écran">⛶</button>
@@ -228,6 +234,13 @@ let activeVol = 0;
 let calib          = null;
 let calibSamples   = [];
 const CALIB_FRAMES = 10;
+
+// ── PRESETS SON ──────────────────────────────────────────────────────────────
+const PRESETS_SON = {
+  theremin: { oscType:'sawtooth', vibratoHz:5.2, vibratoDepth:5, filterQ:2.5, filterBase:900,  attack:0.012, release:0.07,  reverbMix:0.28 },
+  martenot: { oscType:'sine',     vibratoHz:4.0, vibratoDepth:2, filterQ:0.7, filterBase:2200, attack:0.06,  release:0.15,  reverbMix:0.45 }
+};
+let sonMode = 'theremin';
 
 // ── NOTE EDITOR ──────────────────────────────────────────────────────────────
 const noteGrid   = document.getElementById('note-grid');
@@ -343,7 +356,7 @@ selCam.addEventListener('change', async () => {
 });
 
 // ── AUDIO ────────────────────────────────────────────────────────────────────
-let audioCtx, osc, vibratoOsc, filter, envGain, masterGain;
+let audioCtx, osc, vibratoOsc, vibratoGain, filter, envGain, masterGain, reverbGain;
 let audioReady = false;
 
 function makeReverb(ctx) {
@@ -365,22 +378,23 @@ async function initAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   await audioCtx.resume();
 
+  const p = PRESETS_SON[sonMode];
   osc = audioCtx.createOscillator();
-  osc.type = 'sawtooth';
+  osc.type = p.oscType;
   osc.frequency.value = 261.63;
 
   vibratoOsc = audioCtx.createOscillator();
-  vibratoOsc.frequency.value = 5.2;
-  const vibratoGain = audioCtx.createGain();
-  vibratoGain.gain.value = 5;
+  vibratoOsc.frequency.value = p.vibratoHz;
+  vibratoGain = audioCtx.createGain();
+  vibratoGain.gain.value = p.vibratoDepth;
   vibratoOsc.connect(vibratoGain);
   vibratoGain.connect(osc.frequency);
   vibratoOsc.start();
 
   filter = audioCtx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.value = 900;
-  filter.Q.value = 2.5;
+  filter.frequency.value = p.filterBase;
+  filter.Q.value = p.filterQ;
 
   envGain = audioCtx.createGain();
   envGain.gain.value = 0;
@@ -388,9 +402,9 @@ async function initAudio() {
   masterGain = audioCtx.createGain();
   masterGain.gain.value = parseFloat(document.getElementById('rng-vol').value);
 
-  const reverb    = makeReverb(audioCtx);
-  const reverbGain = audioCtx.createGain();
-  reverbGain.gain.value = 0.28;
+  const reverb = makeReverb(audioCtx);
+  reverbGain = audioCtx.createGain();
+  reverbGain.gain.value = p.reverbMix;
 
   osc.connect(filter);
   filter.connect(envGain);
@@ -410,14 +424,15 @@ document.getElementById('rng-vol').addEventListener('input', e => {
 function playNote(idx, vol) {
   if (!audioCtx || !running) return;
   if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') audioCtx.resume();
+  const p = PRESETS_SON[sonMode];
   if (idx >= 0 && vol > 0.02) {
     osc.frequency.setTargetAtTime(midiToFreq(notes[idx]), audioCtx.currentTime, 0.03);
-    filter.frequency.setTargetAtTime(500 + vol * 2000, audioCtx.currentTime, 0.03);
-    envGain.gain.setTargetAtTime(vol * 0.7, audioCtx.currentTime, 0.012);
+    filter.frequency.setTargetAtTime(p.filterBase + vol * 2000, audioCtx.currentTime, 0.03);
+    envGain.gain.setTargetAtTime(vol * 0.7, audioCtx.currentTime, p.attack);
     activeIdx = idx;
     activeVol = vol;
   } else {
-    envGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.07);
+    envGain.gain.setTargetAtTime(0, audioCtx.currentTime, p.release);
     activeIdx = -1;
     activeVol = 0;
   }
@@ -591,6 +606,18 @@ btnStart.addEventListener('click', async () => {
     document.getElementById('note-big').textContent = '—';
     document.getElementById('status').textContent = 'Arrêté';
   }
+});
+
+// ── CHOIX DU SON ─────────────────────────────────────────────────────────────
+document.getElementById('sel-son').addEventListener('change', e => {
+  sonMode = e.target.value;
+  if (!audioCtx) return;
+  const p = PRESETS_SON[sonMode];
+  osc.type = p.oscType;
+  vibratoOsc.frequency.setTargetAtTime(p.vibratoHz, audioCtx.currentTime, 0.5);
+  vibratoGain.gain.setTargetAtTime(p.vibratoDepth, audioCtx.currentTime, 0.5);
+  filter.Q.setTargetAtTime(p.filterQ, audioCtx.currentTime, 0.5);
+  reverbGain.gain.setTargetAtTime(p.reverbMix, audioCtx.currentTime, 0.5);
 });
 
 // ── PLEIN ÉCRAN ───────────────────────────────────────────────────────────────
