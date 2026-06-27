@@ -621,8 +621,7 @@ btnStart.addEventListener('click', async () => {
     frameLoop();
     btnStart.textContent = '⏹ STOP';
     btnStart.classList.add('on');
-    document.getElementById('status').textContent =
-      'Garde la tête neutre un instant (calibration)… puis horizontal → note, vertical → volume';
+    document.getElementById('status').textContent = '';
   } else {
     playNote(-1, 0);          // couper le son AVANT running=false (sinon playNote court-circuite)
     running = false;
