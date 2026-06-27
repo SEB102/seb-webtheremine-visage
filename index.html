@@ -114,6 +114,7 @@
 
   <div class="panel">
     <button id="btn-start">▶ START</button>
+    <button id="btn-centrer" title="Recalibrer la position centrale">◎ Centrer</button>
     <label><span>Gamme</span>
       <select id="sel-scale">
         <option value="M">Majeur</option>
@@ -234,6 +235,7 @@ let activeVol = 0;
 let calib          = null;
 let calibSamples   = [];
 const CALIB_FRAMES = 10;
+let lastRawYaw = 0, lastRawPitch = 0;
 
 // ── PRESETS SON ──────────────────────────────────────────────────────────────
 const PRESETS_SON = {
@@ -525,7 +527,7 @@ function drawFrame(res) {
     // Rotation de la tête (degrés) — déduite de l'ensemble des points du visage
     let yaw = 0, pitch = 0;
     const mats = res.facialTransformationMatrixes;
-    if (mats && mats.length) ({ yaw, pitch } = eulerFromMatrix(mats[0].data));
+    if (mats && mats.length) { ({ yaw, pitch } = eulerFromMatrix(mats[0].data)); lastRawYaw = yaw; lastRawPitch = pitch; }
 
     // ── CALIBRATION : la pose tenue au démarrage DEVIENT le centre (0.5, 0.5) ──
     // MediaPipe ne renvoie pas pitch≈0 quand on regarde l'écran (la caméra n'est
@@ -634,6 +636,14 @@ btnStart.addEventListener('click', async () => {
     document.getElementById('note-big').textContent = '—';
     document.getElementById('status').textContent = 'Arrêté';
   }
+});
+
+// ── CENTRER ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-centrer').addEventListener('click', () => {
+  if (!running) return;
+  calib = { yaw: lastRawYaw, pitch: lastRawPitch };
+  calibSamples.length = 0;
+  document.getElementById('status').textContent = 'Centré ✓ — déplace la tête pour jouer';
 });
 
 // ── CHOIX DU SON ─────────────────────────────────────────────────────────────
