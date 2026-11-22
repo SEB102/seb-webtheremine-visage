@@ -729,7 +729,12 @@ const { FaceLandmarker, FilesetResolver } = vision;
 const fs = await FilesetResolver.forVisionTasks(
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
 );
-const hl = await FaceLandmarker.createFromOptions(fs, {
+// GPU par défaut ; repli automatique sur le processeur si le GPU est indisponible (certains mobiles)
+const _creerAvecRepli = async (Cls, fileset, opts) => {
+  try { return await Cls.createFromOptions(fileset, opts); }
+  catch (e) { console.warn('GPU indisponible, repli sur CPU', e); const o = JSON.parse(JSON.stringify(opts)); o.baseOptions.delegate = 'CPU'; return Cls.createFromOptions(fileset, o); }
+};
+const hl = await _creerAvecRepli(FaceLandmarker, fs, {
   baseOptions: {
     modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
     delegate: 'GPU'
