@@ -311,7 +311,10 @@ function resolveIdx(rawIdx, now, vol) {
 // Pose neutre de référence, capturée au démarrage (→ point au centre exact).
 let calib          = null;
 let calibSamples   = [];
-const CALIB_FRAMES = 10;
+const CALIB_SETTLE = 90;              // ≈ 3 s à 30 images/s : le regard se pose sur la mire, rien n'est mesuré
+const CALIB_MEASURE = 300;            // ≈ 10 s : moyenne de la pose de la tête
+const CALIB_FRAMES = CALIB_SETTLE + CALIB_MEASURE;   // ≈ 13 s au total
+let calibN = 0, faceSeen = false;
 let lastRawYaw = 0, lastRawPitch = 0;
 
 // ── PRESETS SON ──────────────────────────────────────────────────────────────
@@ -436,7 +439,7 @@ selCam.addEventListener('change', async () => {
   if (running) {
     cancelAnimationFrame(animFrame);
     await startCamera();
-    calib = null; calibSamples.length = 0;   // recalibrer après changement de caméra
+    calib = null; calibSamples.length = 0; calibN = 0;   // recalibrer après changement de caméra
     frameLoop();
   }
 });
@@ -774,6 +777,7 @@ function drawFrame(res) {
   const scale = W / (overlay.offsetWidth || W);
 
   ctx2d.clearRect(0, 0, W, H);
+  faceSeen = !!(res.faceLandmarks && res.faceLandmarks.length);
 
   // Vidéo (miroir si activé)
   if (showVideo) {
@@ -798,14 +802,16 @@ function drawFrame(res) {
     // Ce décalage constant, plus grand que degY, collait le point tout en haut.
     // On mémorise la pose initiale comme origine et on travaille en RELATIF.
     if (!calib) {
-      calibSamples.push({ yaw, pitch });
-      if (calibSamples.length >= CALIB_FRAMES) {
+      calibN++;
+      if (calibN > CALIB_SETTLE) calibSamples.push({ yaw, pitch });   // la phase d'installation n'est pas mesurée
+      if (calibN >= CALIB_FRAMES) {
         const n = calibSamples.length;
         calib = {
           yaw:   calibSamples.reduce((s, p) => s + p.yaw,   0) / n,
           pitch: calibSamples.reduce((s, p) => s + p.pitch, 0) / n
         };
-        calibSamples.length = 0;
+        calibSamples.length = 0; calibN = 0;
+        document.getElementById('status').textContent = 'Centré ✓ — déplace la tête pour jouer';
       }
       playNote(-1, 0);
       document.getElementById('note-big').textContent = '·';
@@ -871,6 +877,42 @@ function drawFrame(res) {
     ctx2d.fillStyle = `rgba(0,232,122,${0.2 + cursor.vol * 0.5})`;
     ctx2d.fillRect(W - 10, H - bH, 8, bH);
   }
+
+  // Mire de centrage : regardez le point rouge, tête droite
+  if (!calib) drawMire(W, H);
+}
+
+// ── MIRE DE CENTRAGE : regardez le point rouge ───────────────────────────────
+function drawMire(W, H) {
+  const x = W / 2, y = H / 2;
+  const pulse = 1 + 0.08 * Math.sin(performance.now() / 160);
+  const halo = draw => {
+    ctx2d.lineCap = 'round';
+    ctx2d.strokeStyle = 'rgba(0,0,0,.75)'; ctx2d.lineWidth = 9; draw();
+    ctx2d.strokeStyle = '#ffffff'; ctx2d.lineWidth = 4; draw();
+  };
+  ctx2d.save();
+  halo(() => { ctx2d.beginPath(); ctx2d.arc(x, y, 46 * pulse, 0, Math.PI * 2); ctx2d.stroke(); });
+  halo(() => { ctx2d.beginPath(); ctx2d.arc(x, y, 22, 0, Math.PI * 2); ctx2d.stroke(); });
+  halo(() => { ctx2d.beginPath();
+    ctx2d.moveTo(x - 70, y); ctx2d.lineTo(x - 30, y); ctx2d.moveTo(x + 30, y); ctx2d.lineTo(x + 70, y);
+    ctx2d.moveTo(x, y - 70); ctx2d.lineTo(x, y - 30); ctx2d.moveTo(x, y + 30); ctx2d.lineTo(x, y + 70); ctx2d.stroke(); });
+  ctx2d.beginPath(); ctx2d.arc(x, y, 9, 0, Math.PI * 2); ctx2d.fillStyle = '#ff2a2a'; ctx2d.fill();
+  const p = Math.min(1, calibN / CALIB_FRAMES), R = 66;
+  ctx2d.lineCap = 'round';
+  ctx2d.beginPath(); ctx2d.arc(x, y, R, 0, Math.PI * 2);
+  ctx2d.strokeStyle = 'rgba(0,0,0,.6)'; ctx2d.lineWidth = 12; ctx2d.stroke();
+  ctx2d.strokeStyle = 'rgba(255,255,255,.45)'; ctx2d.lineWidth = 6; ctx2d.stroke();
+  if (p > 0) {
+    const a0 = -Math.PI / 2, a1 = a0 + p * Math.PI * 2;
+    ctx2d.beginPath(); ctx2d.arc(x, y, R, a0, a1); ctx2d.strokeStyle = '#000'; ctx2d.lineWidth = 12; ctx2d.stroke();
+    ctx2d.beginPath(); ctx2d.arc(x, y, R, a0, a1); ctx2d.strokeStyle = '#00e5ff'; ctx2d.lineWidth = 7; ctx2d.stroke();
+  }
+  const msg = faceSeen ? 'Regardez la mire, tête droite' : 'Visage non détecté';
+  ctx2d.font = 'bold 22px -apple-system, system-ui, sans-serif'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'alphabetic';
+  ctx2d.lineWidth = 6; ctx2d.strokeStyle = 'rgba(0,0,0,.8)'; ctx2d.strokeText(msg, x, y + 124);
+  ctx2d.fillStyle = faceSeen ? '#fff' : '#ffd24a'; ctx2d.fillText(msg, x, y + 124);
+  ctx2d.restore();
 }
 
 // ── START / STOP ──────────────────────────────────────────────────────────────
@@ -882,7 +924,7 @@ const _onBtnStart = async () => {
     await initAudio();
     await startCamera();
     running = true;
-    calib = null; calibSamples.length = 0;   // recalibrer la pose neutre à chaque démarrage
+    calib = null; calibSamples.length = 0; calibN = 0;   // recalibrer la pose neutre à chaque démarrage
     frameLoop();
     btnStart.textContent = '⏹ STOP';
     btnStart.classList.add('on');
@@ -920,9 +962,8 @@ _tryStart();
 // ── CENTRER ───────────────────────────────────────────────────────────────────
 ['btn-centrer', 'btn-centrer-fs'].forEach(id => document.getElementById(id).addEventListener('click', () => {
   if (!running) return;
-  calib = { yaw: lastRawYaw, pitch: lastRawPitch };
-  calibSamples.length = 0;
-  document.getElementById('status').textContent = 'Centré ✓ — déplace la tête pour jouer';
+  calib = null; calibSamples.length = 0; calibN = 0;      // relance la mesure (mire affichée)
+  document.getElementById('status').textContent = 'Centrage… regardez la mire';
 }));
 
 // ── CHOIX DU SON ─────────────────────────────────────────────────────────────
