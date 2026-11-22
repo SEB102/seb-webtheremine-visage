@@ -102,6 +102,13 @@
       width: min(100vw, calc(100vh * 4 / 3)) !important;
       height: min(100vh, calc(100vw * 3 / 4)) !important;
     }
+    /* Bouton Centrer visible aussi en plein écran (en bas à droite) */
+    #btn-centrer-fs { display: none; }
+    #video-wrap:fullscreen #btn-centrer-fs,
+    #video-wrap:-webkit-full-screen #btn-centrer-fs {
+      display: block; position: absolute; right: 16px; bottom: 16px; z-index: 5;
+      line-height: normal; padding: 12px 18px; font-size: 1em;
+    }
   </style>
 </head>
 <body>
@@ -110,6 +117,7 @@
   <div id="video-wrap">
     <video id="videoel" width="640" height="480"></video>
     <canvas id="overlay" width="640" height="480"></canvas>
+    <button id="btn-centrer-fs" title="Recalibrer la position centrale">◎ Centrer</button>
   </div>
 
   <div class="panel">
@@ -910,12 +918,12 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
 _tryStart();
 
 // ── CENTRER ───────────────────────────────────────────────────────────────────
-document.getElementById('btn-centrer').addEventListener('click', () => {
+['btn-centrer', 'btn-centrer-fs'].forEach(id => document.getElementById(id).addEventListener('click', () => {
   if (!running) return;
   calib = { yaw: lastRawYaw, pitch: lastRawPitch };
   calibSamples.length = 0;
   document.getElementById('status').textContent = 'Centré ✓ — déplace la tête pour jouer';
-});
+}));
 
 // ── CHOIX DU SON ─────────────────────────────────────────────────────────────
 document.getElementById('sel-son').addEventListener('change', e => {
